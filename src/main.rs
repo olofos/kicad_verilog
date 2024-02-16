@@ -104,7 +104,7 @@ fn main() -> Result<()> {
         }
     }
 
-    let (comp, pins) = netlist
+    let (ext_comp, ext_pins) = netlist
         .components
         .iter_mut()
         .find_map(|comp| {
@@ -116,37 +116,37 @@ fn main() -> Result<()> {
         })
         .unwrap();
 
-    let nets = pins
+    let ext_nets = ext_pins
         .iter()
         .map(|pin_num| {
-            if let Some(pin) = comp.pins.iter().find(|pin| pin.num.0 == pin_num) {
+            if let Some(pin) = ext_comp.pins.iter().find(|pin| pin.num.0 == pin_num) {
                 Ok(pin.net)
             } else {
                 Err(anyhow!(
                     "No pin number {} found for component {}",
                     pin_num,
-                    comp.ref_des.0
+                    ext_comp.ref_des.0
                 ))
             }
         })
         .collect::<Result<Vec<_>>>()?;
 
-    for net_name in &nets {
+    for net_name in &ext_nets {
         let Some(net) = netlist.nets.iter_mut().find(|net| &net.name == net_name) else {
             continue;
         };
         let all_input = net
             .nodes
             .iter()
-            .all(|node| node.ref_des == comp.ref_des || node.typ == PinType::Input);
+            .all(|node| node.ref_des == ext_comp.ref_des || node.typ == PinType::Input);
         let any_output = net
             .nodes
             .iter()
-            .any(|node| node.ref_des != comp.ref_des && node.typ == PinType::Output);
+            .any(|node| node.ref_des != ext_comp.ref_des && node.typ == PinType::Output);
         let Some(node) = net
             .nodes
             .iter_mut()
-            .find(|node| node.ref_des == comp.ref_des)
+            .find(|node| node.ref_des == ext_comp.ref_des)
         else {
             continue;
         };
@@ -156,18 +156,20 @@ fn main() -> Result<()> {
         if all_input {
             node.typ = PinType::Output;
         }
-        comp.pins
+        ext_comp
+            .pins
             .iter_mut()
             .find(|pin| pin.num == node.num)
             .expect("There should be a matching pin")
             .typ = node.typ;
     }
 
-    let net_string = nets
+    let mod_ports = ext_nets
         .iter()
         .map(|net| {
-            let pin = comp.pins.iter().find(|pin| &pin.net == net).unwrap();
-            let name = make_verilog_name(pin.net);
+            let pin = ext_comp.pins.iter().find(|pin| &pin.net == net).unwrap();
+            let name = format!("{}_{}", ext_comp.ref_des.0, pin.name);
+            let name = make_verilog_name(&name);
             let typ = match pin.typ {
                 PinType::Input => "output",
                 PinType::Output => "input",
@@ -178,9 +180,9 @@ fn main() -> Result<()> {
         .collect::<Vec<_>>()
         .join(",\n    ");
 
-    println!("module {module_name}\n(\n    {net_string}\n);",);
+    println!("module {module_name}\n(\n    {mod_ports}\n);",);
 
-    let external_nets = nets.into_iter().map(|name| name).collect::<Vec<_>>();
+    let external_nets = ext_nets.into_iter().map(|name| name).collect::<Vec<_>>();
 
     for net in netlist
         .nets
@@ -195,16 +197,25 @@ fn main() -> Result<()> {
     }
 
     println!();
-    for net in netlist
-        .nets
-        .iter()
-        .filter(|net| !external_nets.contains(&net.name))
-    {
+    for net in netlist.nets.iter() {
         println!("    wire {};", make_verilog_name(net.name));
     }
     println!();
     println!("    assign VCC = 1;");
     println!("    assign GND = 0;");
+    println!();
+    for pin_num in ext_pins {
+        let Some(pin) = ext_comp.pins.iter().find(|pin| pin.num.0 == pin_num) else {
+            continue;
+        };
+        let name = format!("{}_{}", ext_comp.ref_des.0, pin.name);
+        println!(
+            "    tran({},{});",
+            make_verilog_name(&name),
+            make_verilog_name(pin.net)
+        );
+    }
+    println!();
 
     for comp in &netlist.components {
         if let Some(rule) = config.match_component(comp) {
