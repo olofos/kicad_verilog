@@ -91,15 +91,6 @@ impl Config {
     pub fn parse(i: &str) -> Result<Config> {
         let (_, part_rules) = part_pattern_rules(i).map_err(|err| err.to_owned())?;
 
-        if part_rules
-            .iter()
-            .filter(|pr| matches!(pr.rule, PartRule::External(_)))
-            .count()
-            != 1
-        {
-            anyhow::bail!("Expected exactly one external component");
-        }
-
         Ok(Config { part_rules })
     }
 

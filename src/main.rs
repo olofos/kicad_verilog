@@ -23,6 +23,12 @@ fn make_verilog_name<'a>(name: &'a str) -> Cow<'a, str> {
     }
 }
 
+struct ModPort {
+    name: String,
+    net: String,
+    typ: String,
+}
+
 fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().collect();
     let path = if args.len() > 1 { &args[1] } else { "alu.net" };
@@ -104,97 +110,84 @@ fn main() -> Result<()> {
         }
     }
 
-    let (ext_comp, ext_pins) = netlist
-        .components
-        .iter_mut()
-        .find_map(|comp| {
-            let rule = config.match_component(comp);
-            match rule {
-                Some(PartRule::External(pins)) => Some((comp, pins)),
-                _ => None,
-            }
-        })
-        .unwrap();
+    let mut mod_ports = vec![];
 
-    let ext_nets = ext_pins
-        .iter()
-        .map(|pin_num| {
-            if let Some(pin) = ext_comp.pins.iter().find(|pin| pin.num.0 == pin_num) {
-                Ok(pin.net)
-            } else {
-                Err(anyhow!(
-                    "No pin number {} found for component {}",
-                    pin_num,
-                    ext_comp.ref_des.0
-                ))
-            }
-        })
-        .collect::<Result<Vec<_>>>()?;
-
-    for net_name in &ext_nets {
-        let Some(net) = netlist.nets.iter_mut().find(|net| &net.name == net_name) else {
-            continue;
-        };
-        let all_input = net
-            .nodes
-            .iter()
-            .all(|node| node.ref_des == ext_comp.ref_des || node.typ == PinType::Input);
-        let any_output = net
-            .nodes
-            .iter()
-            .any(|node| node.ref_des != ext_comp.ref_des && node.typ == PinType::Output);
-        let Some(node) = net
-            .nodes
-            .iter_mut()
-            .find(|node| node.ref_des == ext_comp.ref_des)
-        else {
-            continue;
-        };
-        if any_output {
-            node.typ = PinType::Input;
+    for (ext_comp, ext_pins) in netlist.components.iter_mut().filter_map(|comp| {
+        let rule = config.match_component(comp);
+        match rule {
+            Some(PartRule::External(pins)) => Some((comp, pins)),
+            _ => None,
         }
-        if all_input {
-            node.typ = PinType::Output;
-        }
-        ext_comp
-            .pins
-            .iter_mut()
-            .find(|pin| pin.num == node.num)
-            .expect("There should be a matching pin")
-            .typ = node.typ;
-    }
+    }) {
+        let ext_nets = ext_pins
+            .iter()
+            .map(|pin_num| {
+                if let Some(pin) = ext_comp.pins.iter().find(|pin| pin.num.0 == pin_num) {
+                    Ok(pin.net)
+                } else {
+                    Err(anyhow!(
+                        "No pin number {} found for component {}",
+                        pin_num,
+                        ext_comp.ref_des.0
+                    ))
+                }
+            })
+            .collect::<Result<Vec<_>>>()?;
 
-    let mod_ports = ext_nets
-        .iter()
-        .map(|net| {
+        for net_name in &ext_nets {
+            let Some(net) = netlist.nets.iter_mut().find(|net| &net.name == net_name) else {
+                continue;
+            };
+            let all_input = net
+                .nodes
+                .iter()
+                .all(|node| node.ref_des == ext_comp.ref_des || node.typ == PinType::Input);
+            let any_output = net
+                .nodes
+                .iter()
+                .any(|node| node.ref_des != ext_comp.ref_des && node.typ == PinType::Output);
+            let Some(node) = net
+                .nodes
+                .iter_mut()
+                .find(|node| node.ref_des == ext_comp.ref_des)
+            else {
+                continue;
+            };
+            if any_output {
+                node.typ = PinType::Input;
+            }
+            if all_input {
+                node.typ = PinType::Output;
+            }
+            ext_comp
+                .pins
+                .iter_mut()
+                .find(|pin| pin.num == node.num)
+                .expect("There should be a matching pin")
+                .typ = node.typ;
+        }
+
+        for net in &ext_nets {
             let pin = ext_comp.pins.iter().find(|pin| &pin.net == net).unwrap();
             let name = format!("{}_{}", ext_comp.ref_des.0, pin.name);
-            let name = make_verilog_name(&name);
+            let name = make_verilog_name(&name).to_string();
+            let net = make_verilog_name(pin.net).to_string();
             let typ = match pin.typ {
                 PinType::Input => "output",
                 PinType::Output => "input",
                 _ => "inout",
-            };
-            format!("{typ} {name}")
-        })
+            }
+            .to_string();
+            mod_ports.push(ModPort { name, net, typ })
+        }
+    }
+
+    let port_string = mod_ports
+        .iter()
+        .map(|ModPort { name, typ, net: _ }| format!("{typ} {name}",))
         .collect::<Vec<_>>()
         .join(",\n    ");
-
-    println!("module {module_name}\n(\n    {mod_ports}\n);",);
-
-    let external_nets = ext_nets.into_iter().map(|name| name).collect::<Vec<_>>();
-
-    for net in netlist
-        .nets
-        .iter()
-        .filter(|net| external_nets.contains(&net.name))
-    {
-        eprint!("{}: ", net.name);
-        for node in &net.nodes {
-            eprint!("({}:{},{:?}) ", node.ref_des.0, node.num.0, node.typ);
-        }
-        eprintln!();
-    }
+    println!("module {module_name}\n(\n    {port_string}\n);",);
 
     println!();
     for net in netlist.nets.iter() {
@@ -204,17 +197,10 @@ fn main() -> Result<()> {
     println!("    assign VCC = 1;");
     println!("    assign GND = 0;");
     println!();
-    for pin_num in ext_pins {
-        let Some(pin) = ext_comp.pins.iter().find(|pin| pin.num.0 == pin_num) else {
-            continue;
-        };
-        let name = format!("{}_{}", ext_comp.ref_des.0, pin.name);
-        println!(
-            "    tran({},{});",
-            make_verilog_name(&name),
-            make_verilog_name(pin.net)
-        );
+    for ModPort { name, net, typ: _ } in &mod_ports {
+        println!("    tran({name},{net});");
     }
+
     println!();
 
     for comp in &netlist.components {
