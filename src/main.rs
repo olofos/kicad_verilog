@@ -12,7 +12,7 @@ use std::{
 
 use crate::config::Config;
 
-fn make_verilog_name<'a>(name: &'a str) -> Cow<'a, str> {
+fn make_verilog_name(name: &str) -> Cow<'_, str> {
     static RE: once_cell::sync::Lazy<Regex> =
         once_cell::sync::Lazy::new(|| Regex::new(r"^[a-zA-Z_][a-zA-Z0-9$_]*$").unwrap());
 
@@ -37,7 +37,7 @@ fn main() -> Result<()> {
     let mut netlist: NetList = (&input).try_into()?;
 
     let module_name = path.file_name().unwrap().to_string_lossy();
-    let module_name = make_verilog_name(module_name.split(".").next().unwrap());
+    let module_name = make_verilog_name(module_name.split('.').next().unwrap());
 
     let path = if args.len() > 2 {
         PathBuf::from(&args[2])
