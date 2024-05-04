@@ -127,7 +127,8 @@ mod tests {
 
     macro_rules! test_data {
         ($fname:expr) => {
-            std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/", $fname)).unwrap()
+            std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/test-data/", $fname))
+                .unwrap()
         };
     }
 
