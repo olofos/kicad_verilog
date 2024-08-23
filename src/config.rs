@@ -125,16 +125,11 @@ impl Config {
 mod tests {
     use super::*;
 
-    macro_rules! test_data {
-        ($fname:expr) => {
-            std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/test-data/", $fname))
-                .unwrap()
-        };
-    }
-
     #[test]
     fn can_parse_config() {
-        let input = test_data!("alu.vcfg");
+        let input =
+            std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/test-data/alu.vcfg"))
+                .unwrap();
         let config = Config::parse(&input).unwrap();
         for rule in &config.part_rules {
             println!("{:?} -> {:?}", rule.pattern, rule.rule);
