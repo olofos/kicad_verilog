@@ -2,7 +2,7 @@ mod config;
 
 use anyhow::{anyhow, Result};
 use config::PartRule;
-use kicad_netlist::{self, NetList, PinType};
+use kicad_netlist::{self, NetList, NetName, PinType};
 use regex::Regex;
 use std::{
     borrow::Cow,
@@ -47,6 +47,9 @@ fn main() -> Result<()> {
     let input = fs::read_to_string(path)?;
     let mut config = Config::parse(&input)?;
 
+    let vcc_nets: &[NetName] = &[NetName::from("VCC")];
+    let gnd_nets: &[NetName] = &[NetName::from("GND")];
+
     let decoupling_caps = netlist
         .components
         .iter()
@@ -55,7 +58,10 @@ fn main() -> Result<()> {
                 return None;
             }
             let nets = comp.pins.iter().map(|pin| pin.net).collect::<Vec<_>>();
-            if nets.len() == 2 && nets.contains(&"VCC") && nets.contains(&"GND") {
+            if nets.len() == 2
+                && vcc_nets.iter().any(|vcc| nets.contains(vcc))
+                && gnd_nets.iter().any(|vcc| nets.contains(vcc))
+            {
                 Some(comp.ref_des)
             } else {
                 None
@@ -95,16 +101,16 @@ fn main() -> Result<()> {
 
     for comp in &netlist.components {
         if comp.part_id.part == "R" && comp.pins.len() == 2 {
-            if comp.pins[0].net == "VCC" && comp.pins[1].net != "GND" {
+            if vcc_nets.contains(&comp.pins[0].net) && !gnd_nets.contains(&comp.pins[1].net) {
                 config.add_pullup(comp.ref_des, comp.pins[1].num);
             }
-            if comp.pins[1].net == "VCC" && comp.pins[0].net != "GND" {
+            if vcc_nets.contains(&comp.pins[1].net) && !gnd_nets.contains(&comp.pins[0].net) {
                 config.add_pullup(comp.ref_des, comp.pins[0].num);
             }
-            if comp.pins[0].net == "GND" {
+            if gnd_nets.contains(&comp.pins[0].net) {
                 config.add_pulldown(comp.ref_des, comp.pins[1].num);
             }
-            if comp.pins[1].net == "GND" {
+            if gnd_nets.contains(&comp.pins[1].net) {
                 config.add_pulldown(comp.ref_des, comp.pins[0].num);
             }
         }
@@ -122,13 +128,13 @@ fn main() -> Result<()> {
         let ext_nets = ext_pins
             .iter()
             .map(|pin_num| {
-                if let Some(pin) = ext_comp.pins.iter().find(|pin| pin.num.0 == pin_num) {
+                if let Some(pin) = ext_comp.pins.iter().find(|pin| pin.num.as_str() == pin_num) {
                     Ok(pin.net)
                 } else {
                     Err(anyhow!(
                         "No pin number {} found for component {}",
                         pin_num,
-                        ext_comp.ref_des.0
+                        ext_comp.ref_des
                     ))
                 }
             })
@@ -169,9 +175,9 @@ fn main() -> Result<()> {
 
         for net in &ext_nets {
             let pin = ext_comp.pins.iter().find(|pin| &pin.net == net).unwrap();
-            let name = format!("{}_{}", ext_comp.ref_des.0, pin.name);
+            let name = format!("{}_{}", ext_comp.ref_des, pin.name);
             let name = make_verilog_name(&name).to_string();
-            let net = make_verilog_name(pin.net).to_string();
+            let net = make_verilog_name(pin.net.as_str()).to_string();
             let typ = match pin.typ {
                 PinType::Input => "output",
                 PinType::Output => "input",
@@ -191,7 +197,7 @@ fn main() -> Result<()> {
 
     println!();
     for net in netlist.nets.iter() {
-        println!("    wire {};", make_verilog_name(net.name));
+        println!("    wire {};", make_verilog_name(net.name.as_str()));
     }
     println!();
     println!("    assign VCC = 1;");
@@ -212,13 +218,15 @@ fn main() -> Result<()> {
                     let nets = pins
                         .iter()
                         .map(|pin_num| {
-                            if let Some(pin) = comp.pins.iter().find(|pin| pin.num.0 == pin_num) {
-                                Ok(make_verilog_name(pin.net))
+                            if let Some(pin) =
+                                comp.pins.iter().find(|pin| pin.num.as_str() == pin_num)
+                            {
+                                Ok(make_verilog_name(pin.net.as_str()))
                             } else {
                                 Err(anyhow!(
                                     "No pin number {} found for component {}",
                                     pin_num,
-                                    comp.ref_des.0
+                                    comp.ref_des
                                 ))
                             }
                         })
@@ -227,16 +235,17 @@ fn main() -> Result<()> {
                     println!(
                         "    {} {}({});",
                         name,
-                        make_verilog_name(comp.ref_des.0),
+                        make_verilog_name(comp.ref_des.as_str()),
                         nets.join(",")
                     );
                 }
             }
         } else {
-            eprintln!(
+            return Err(anyhow!(
                 "No rule matching component {}: {}",
-                comp.ref_des.0, comp.part_id.part
-            );
+                comp.ref_des,
+                comp.part_id.part
+            ));
         }
     }
     println!("endmodule");

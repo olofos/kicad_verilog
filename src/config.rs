@@ -97,7 +97,7 @@ impl Config {
     pub fn match_component(&self, comp: &Component) -> Option<&PartRule> {
         for rule in &self.part_rules {
             if match &rule.pattern {
-                PartPattern::RefDes(ref_des) => ref_des == comp.ref_des.0,
+                PartPattern::RefDes(ref_des) => ref_des == comp.ref_des.as_str(),
                 PartPattern::Part(part) => part == comp.part_id.part,
             } {
                 return Some(&rule.rule);
@@ -108,15 +108,15 @@ impl Config {
 
     pub fn add_pullup(&mut self, ref_des: RefDes, pin: PinNum) {
         self.part_rules.push(PartPatternRule {
-            pattern: PartPattern::RefDes(ref_des.0.to_string()),
-            rule: PartRule::Module("pullup".to_string(), vec![pin.0.to_string()]),
+            pattern: PartPattern::RefDes(ref_des.to_string()),
+            rule: PartRule::Module("pullup".to_string(), vec![pin.to_string()]),
         })
     }
 
     pub fn add_pulldown(&mut self, ref_des: RefDes, pin: PinNum) {
         self.part_rules.push(PartPatternRule {
-            pattern: PartPattern::RefDes(ref_des.0.to_string()),
-            rule: PartRule::Module("pulldown".to_string(), vec![pin.0.to_string()]),
+            pattern: PartPattern::RefDes(ref_des.to_string()),
+            rule: PartRule::Module("pulldown".to_string(), vec![pin.to_string()]),
         })
     }
 }
