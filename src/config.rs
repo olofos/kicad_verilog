@@ -2,16 +2,6 @@ use std::collections::HashSet;
 
 use anyhow::Result;
 use kicad_netlist::{Component, PinNum, RefDes};
-use nom::{
-    self,
-    branch::alt,
-    bytes::complete::tag,
-    character::complete::{alphanumeric1, multispace0, none_of},
-    combinator::{map, recognize, value},
-    multi::{many0, many1, separated_list0},
-    sequence::{delimited, preceded, separated_pair, terminated, tuple},
-    IResult,
-};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum PartPattern {
@@ -37,56 +27,72 @@ pub struct Config {
     part_rules: Vec<PartPatternRule>,
 }
 
-fn part_pattern(i: &str) -> IResult<&str, PartPattern> {
-    alt((
-        map(
-            delimited(tag("["), recognize(many1(none_of("[]= \r\t\n"))), tag("]")),
-            |s: &str| PartPattern::RefDes(s.to_string()),
-        ),
-        map(recognize(many1(none_of("= \r\t\n"))), |s: &str| {
-            PartPattern::Part(s.to_string())
-        }),
-    ))(i)
+fn strip_prefix_and_suffix<'a>(input: &'a str, prefix: &str, suffix: &str) -> Option<&'a str> {
+    if let Some(input) = input.strip_prefix(prefix) {
+        input.strip_suffix(suffix)
+    } else {
+        None
+    }
 }
 
-fn pin_list(i: &str) -> IResult<&str, Vec<String>> {
-    separated_list0(
-        tuple((multispace0, tag(","), multispace0)),
-        map(preceded(tag("#"), alphanumeric1), |s: &str| s.to_owned()),
-    )(i)
+fn parse_pattern(input: &str) -> anyhow::Result<PartPattern> {
+    let pattern = input.trim();
+
+    if let Some(pattern) = strip_prefix_and_suffix(pattern, "[", "]") {
+        Ok(PartPattern::RefDes(pattern.to_string()))
+    } else {
+        Ok(PartPattern::Part(pattern.to_string()))
+    }
 }
 
-fn part_rule(i: &str) -> IResult<&str, PartRule> {
-    alt((
-        value(PartRule::Skip, tag("skip")),
-        map(
-            delimited(tag("module["), pin_list, tag("]")),
-            |pins: Vec<String>| PartRule::External(pins),
-        ),
-        map(
-            tuple((
-                recognize(many1(none_of("()\r\n"))),
-                delimited(tag("("), pin_list, tag(")")),
-            )),
-            |(name, pins): (&str, Vec<String>)| PartRule::Module(name.to_string(), pins),
-        ),
-    ))(i)
+fn parse_pin(input: &str) -> anyhow::Result<String> {
+    let input = input.trim();
+
+    if let Some(pin) = input.strip_prefix("#") {
+        Ok(pin.to_string())
+    } else {
+        Err(anyhow::anyhow!("Invalid pin: {input}"))
+    }
 }
 
-fn part_pattern_rule(i: &str) -> IResult<&str, PartPatternRule> {
-    let (i, (pattern, rule)) = terminated(
-        separated_pair(
-            part_pattern,
-            tuple((multispace0, tag("=>"), multispace0)),
-            part_rule,
-        ),
-        multispace0,
-    )(i)?;
-    Ok((i, PartPatternRule { pattern, rule }))
+fn parse_pins(input: &str) -> anyhow::Result<Vec<String>> {
+    let input = input.trim();
+    if input.is_empty() {
+        Ok(vec![])
+    } else {
+        input.split(',').map(parse_pin).collect::<Result<_, _>>()
+    }
 }
 
-fn part_pattern_rules(i: &str) -> IResult<&str, Vec<PartPatternRule>> {
-    many0(part_pattern_rule)(i)
+fn parse_rule(input: &str) -> anyhow::Result<PartRule> {
+    let input = input.trim();
+    if input == "skip" {
+        Ok(PartRule::Skip)
+    } else if let Some(pins) = strip_prefix_and_suffix(input, "module[", "]") {
+        Ok(PartRule::External(parse_pins(pins)?))
+    } else if let Some((module, pins)) = input.split_once('(') {
+        if let Some(pins) = pins.strip_suffix(")") {
+            Ok(PartRule::Module(module.to_string(), parse_pins(pins)?))
+        } else {
+            Err(anyhow::anyhow!("Invalid rule: '{input}'"))
+        }
+    } else {
+        Err(anyhow::anyhow!("Invalid rule: '{input}'"))
+    }
+}
+
+fn parse(input: &str) -> anyhow::Result<Vec<PartPatternRule>> {
+    let mut result = vec![];
+    for line in input.lines() {
+        let Some((pattern, rule)) = line.split_once("=>") else {
+            anyhow::bail!("Line does not contain '=>'");
+        };
+        let pattern = parse_pattern(pattern)?;
+        let rule = parse_rule(rule)?;
+
+        result.push(PartPatternRule { pattern, rule });
+    }
+    Ok(result)
 }
 
 impl Config {
@@ -95,7 +101,7 @@ impl Config {
     }
 
     pub fn parse(&mut self, i: &str) -> Result<()> {
-        let (_, part_rules) = part_pattern_rules(i).map_err(|err| err.to_owned())?;
+        let part_rules = parse(i).map_err(|s| anyhow::anyhow!("{s}"))?;
 
         let old_set = HashSet::<_>::from_iter(self.part_rules.iter().map(|rule| &rule.pattern));
         let mut new_set = HashSet::new();
@@ -163,6 +169,14 @@ mod tests {
         for rule in &config.part_rules {
             println!("{:?} -> {:?}", rule.pattern, rule.rule);
         }
+    }
+
+    #[test]
+    fn get_error_for_pins_without_hash() {
+        let i = "a => a(#2)\nb => b(2)";
+        let Err(_) = Config::try_from(i) else {
+            panic!("expected error")
+        };
     }
 
     #[test]
