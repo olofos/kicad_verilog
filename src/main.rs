@@ -45,7 +45,7 @@ fn main() -> Result<()> {
         path.with_extension("vcfg")
     };
     let input = fs::read_to_string(path)?;
-    let mut config = Config::parse(&input)?;
+    let mut config = Config::try_from(&input)?;
 
     let vcc_nets: &[NetName] = &[NetName::from("VCC")];
     let gnd_nets: &[NetName] = &[NetName::from("GND")];

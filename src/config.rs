@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use anyhow::Result;
 use kicad_netlist::{Component, PinNum, RefDes};
 use nom::{
@@ -11,7 +13,7 @@ use nom::{
     IResult,
 };
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum PartPattern {
     RefDes(String),
     Part(String),
@@ -24,7 +26,7 @@ pub enum PartRule {
     Module(String, Vec<String>),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct PartPatternRule {
     pattern: PartPattern,
     rule: PartRule,
@@ -88,10 +90,37 @@ fn part_pattern_rules(i: &str) -> IResult<&str, Vec<PartPatternRule>> {
 }
 
 impl Config {
-    pub fn parse(i: &str) -> Result<Config> {
+    pub fn new() -> Self {
+        Self { part_rules: vec![] }
+    }
+
+    pub fn parse(&mut self, i: &str) -> Result<()> {
         let (_, part_rules) = part_pattern_rules(i).map_err(|err| err.to_owned())?;
 
-        Ok(Config { part_rules })
+        let old_set = HashSet::<_>::from_iter(self.part_rules.iter().map(|rule| &rule.pattern));
+        let mut new_set = HashSet::new();
+        for rule in &part_rules {
+            if new_set.contains(&rule.pattern) {
+                return Err(anyhow::anyhow!(
+                    "Config file contains multiple rules for {:?}",
+                    rule.pattern
+                ));
+            }
+            if old_set.contains(&rule.pattern) {
+                return Err(anyhow::anyhow!("Duplicate rule for {:?}", rule.pattern));
+            }
+            new_set.insert(&rule.pattern);
+        }
+
+        self.part_rules.extend(part_rules);
+        Ok(())
+    }
+
+    #[allow(dead_code)]
+    pub fn try_from(i: &str) -> Result<Self> {
+        let mut config = Self::new();
+        config.parse(i)?;
+        Ok(config)
     }
 
     pub fn match_component(&self, comp: &Component) -> Option<&PartRule> {
@@ -130,9 +159,28 @@ mod tests {
         let input =
             std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/test-data/alu.vcfg"))
                 .unwrap();
-        let config = Config::parse(&input).unwrap();
+        let config = Config::try_from(&input).unwrap();
         for rule in &config.part_rules {
             println!("{:?} -> {:?}", rule.pattern, rule.rule);
         }
+    }
+
+    #[test]
+    fn get_error_when_multiple_rules_with_same_pattern() {
+        let i = "a => a()\na => b()";
+        let Err(_) = Config::try_from(i) else {
+            panic!("expected error")
+        };
+    }
+
+    #[test]
+    fn get_error_when_multiple_rules_with_same_pattern2() {
+        let i1 = "a => a()";
+        let i2 = "a => b()";
+        let mut config = Config::try_from(i1).unwrap();
+
+        let Err(_) = config.parse(i2) else {
+            panic!("expected error")
+        };
     }
 }
