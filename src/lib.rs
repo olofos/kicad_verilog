@@ -123,20 +123,18 @@ pub fn write_verilog(mut netlist: NetList, module_name: &str, mut config: Config
             _ => None,
         }
     }) {
-        let ext_nets = ext_pins
-            .iter()
-            .map(|pin_num| {
-                if let Some(pin) = ext_comp.pins.iter().find(|pin| pin.num.as_str() == pin_num) {
-                    Ok(pin.net)
-                } else {
-                    Err(anyhow!(
-                        "No pin number {} found for component {}",
-                        pin_num,
-                        ext_comp.ref_des
-                    ))
-                }
-            })
-            .collect::<Result<Vec<_>>>()?;
+        let mut ext_nets = vec![];
+        for pin_num in ext_pins {
+            if let Some(pin) = ext_comp.pins.iter().find(|pin| pin.num == pin_num.into()) {
+                ext_nets.push(pin.net);
+            } else {
+                anyhow::bail!(
+                    "No pin number {} found for component {}",
+                    pin_num,
+                    ext_comp.ref_des
+                )
+            }
+        }
 
         for net_name in &ext_nets {
             let Some(net) = netlist.nets.iter_mut().find(|net| &net.name == net_name) else {
@@ -169,10 +167,12 @@ pub fn write_verilog(mut netlist: NetList, module_name: &str, mut config: Config
                 .find(|pin| pin.num == node.num)
                 .expect("There should be a matching pin")
                 .typ = node.typ;
-        }
 
-        for net in &ext_nets {
-            let pin = ext_comp.pins.iter().find(|pin| &pin.net == net).unwrap();
+            let pin = ext_comp
+                .pins
+                .iter()
+                .find(|pin| &pin.net == net_name)
+                .unwrap();
             let name = format!("{}_{}", ext_comp.ref_des, pin.name);
             let name = make_verilog_name(&name).to_string();
             let net = make_verilog_name(pin.net.as_str()).to_string();
