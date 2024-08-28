@@ -1,16 +1,26 @@
 mod config;
 
 use anyhow::{anyhow, Result};
+use clap::Parser;
 use config::PartRule;
 use kicad_netlist::{self, NetList, NetName, PinType};
 use regex::Regex;
-use std::{
-    borrow::Cow,
-    fs,
-    path::{Path, PathBuf},
-};
+use std::{borrow::Cow, fs, path::PathBuf};
 
 use crate::config::Config;
+
+#[derive(Parser)]
+#[command(version, about, long_about = None)]
+struct Cli {
+    /// Path netlist file
+    netlist: PathBuf,
+    /// Config file
+    #[arg(long, short)]
+    config: Vec<PathBuf>,
+    /// Module name
+    #[arg(long, short)]
+    module: Option<String>,
+}
 
 fn make_verilog_name(name: &str) -> Cow<'_, str> {
     static RE: once_cell::sync::Lazy<Regex> =
@@ -30,22 +40,28 @@ struct ModPort {
 }
 
 fn main() -> Result<()> {
-    let args: Vec<String> = std::env::args().collect();
-    let path = if args.len() > 1 { &args[1] } else { "alu.net" };
-    let path = Path::new(path);
-    let input = fs::read_to_string(path)?;
+    let cli = Cli::parse();
+
+    let path = cli.netlist;
+    let input = fs::read_to_string(&path)?;
     let mut netlist: NetList = (&input).try_into()?;
 
-    let module_name = path.file_name().unwrap().to_string_lossy();
-    let module_name = make_verilog_name(module_name.split('.').next().unwrap());
+    let module_name = cli.module.unwrap_or_else(|| {
+        path.file_name()
+            .unwrap()
+            .to_string_lossy()
+            .split('.')
+            .next()
+            .unwrap()
+            .to_string()
+    });
+    let module_name = make_verilog_name(&module_name);
 
-    let path = if args.len() > 2 {
-        PathBuf::from(&args[2])
-    } else {
-        path.with_extension("vcfg")
-    };
-    let input = fs::read_to_string(path)?;
-    let mut config = Config::try_from(&input)?;
+    let mut config = Config::new();
+    for path in cli.config {
+        let input = fs::read_to_string(path)?;
+        config.parse(&input)?;
+    }
 
     let vcc_nets: &[NetName] = &[NetName::from("VCC")];
     let gnd_nets: &[NetName] = &[NetName::from("GND")];
