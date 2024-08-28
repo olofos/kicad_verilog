@@ -42,7 +42,7 @@ fn main() -> Result<()> {
         config.parse(&input)?;
     }
 
-    kicad_verilog::do_it(netlist, &module_name, config)?;
+    kicad_verilog::write_verilog(netlist, &module_name, config)?;
 
     Ok(())
 }

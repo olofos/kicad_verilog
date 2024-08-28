@@ -24,12 +24,7 @@ fn make_verilog_name(name: &str) -> Cow<'_, str> {
     }
 }
 
-pub fn do_it(mut netlist: NetList, module_name: &str, mut config: Config) -> Result<()> {
-    let module_name = make_verilog_name(&module_name);
-
-    let vcc_nets: &[NetName] = &[NetName::from("VCC")];
-    let gnd_nets: &[NetName] = &[NetName::from("GND")];
-
+fn remove_decoupling_caps(netlist: &mut NetList, vcc_nets: &[NetName], gnd_nets: &[NetName]) {
     let decoupling_caps = netlist
         .components
         .iter()
@@ -50,7 +45,9 @@ pub fn do_it(mut netlist: NetList, module_name: &str, mut config: Config) -> Res
         .collect::<Vec<_>>();
 
     netlist.remove_components(&decoupling_caps);
+}
 
+fn remove_pinless_components(netlist: &mut NetList) {
     let pinless_components = netlist
         .components
         .iter()
@@ -64,7 +61,9 @@ pub fn do_it(mut netlist: NetList, module_name: &str, mut config: Config) -> Res
         .collect::<Vec<_>>();
 
     netlist.remove_components(&pinless_components);
+}
 
+fn remove_skipped_components(netlist: &mut NetList, config: &Config) {
     let skipped_components = netlist
         .components
         .iter()
@@ -78,7 +77,14 @@ pub fn do_it(mut netlist: NetList, module_name: &str, mut config: Config) -> Res
         .collect::<Vec<_>>();
 
     netlist.remove_components(&skipped_components);
+}
 
+fn add_pullups_and_pulldowns(
+    config: &mut Config,
+    netlist: &NetList,
+    vcc_nets: &[NetName],
+    gnd_nets: &[NetName],
+) {
     for comp in &netlist.components {
         if comp.part_id.part == "R" && comp.pins.len() == 2 {
             if vcc_nets.contains(&comp.pins[0].net) && !gnd_nets.contains(&comp.pins[1].net) {
@@ -95,6 +101,18 @@ pub fn do_it(mut netlist: NetList, module_name: &str, mut config: Config) -> Res
             }
         }
     }
+}
+
+pub fn write_verilog(mut netlist: NetList, module_name: &str, mut config: Config) -> Result<()> {
+    let module_name = make_verilog_name(&module_name);
+
+    let vcc_nets: &[NetName] = &[NetName::from("VCC")];
+    let gnd_nets: &[NetName] = &[NetName::from("GND")];
+
+    remove_decoupling_caps(&mut netlist, vcc_nets, gnd_nets);
+    remove_pinless_components(&mut netlist);
+    remove_skipped_components(&mut netlist, &config);
+    add_pullups_and_pulldowns(&mut config, &netlist, vcc_nets, gnd_nets);
 
     let mut mod_ports = vec![];
 
