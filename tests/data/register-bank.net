@@ -1,6 +1,6 @@
 (export (version "E")
   (design
-    (source "C:\\Users\\Olof\\Documents\\Projects\\register-bank\\register-bank.kicad_sch")
+    (source "register-bank.kicad_sch")
     (date "2024-01-11 23:57:27")
     (tool "Eeschema 7.0.7")
     (sheet (number "1") (name "/") (tstamps "/")
@@ -943,7 +943,7 @@
     (library (logical "Regulator_Linear")
       (uri "C:\\Program Files\\KiCad\\7.0\\share\\kicad\\symbols\\/Regulator_Linear.kicad_sym"))
     (library (logical "riscv-serial")
-      (uri "C:\\Users\\Olof\\Documents\\Projects\\register-bank/../riscv-serial.kicad_sym")))
+      (uri "../riscv-serial.kicad_sym")))
   (nets
     (net (code "1") (name "/BUS_CLK")
       (node (ref "J1") (pin "2") (pinfunction "BUS_CLK") (pintype "passive"))

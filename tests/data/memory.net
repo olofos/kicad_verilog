@@ -1,6 +1,6 @@
 (export (version "E")
   (design
-    (source "C:\\Users\\Olof\\Documents\\Projects\\rv321\\hardware\\memory\\memory.kicad_sch")
+    (source "memory.kicad_sch")
     (date "Thu Feb 15 10:29:00 2024")
     (tool "Eeschema 7.0.7")
     (sheet (number "1") (name "/") (tstamps "/")
@@ -1101,7 +1101,7 @@
     (library (logical "Regulator_Linear")
       (uri "C:\\Program Files\\KiCad\\7.0\\share\\kicad\\symbols\\/Regulator_Linear.kicad_sym"))
     (library (logical "riscv-serial")
-      (uri "C:\\Users\\Olof\\Documents\\Projects\\rv321\\hardware\\memory/../riscv-serial.kicad_sym")))
+      (uri "../riscv-serial.kicad_sym")))
   (nets
     (net (code "1") (name "/A0")
       (node (ref "J3") (pin "2") (pinfunction "A0") (pintype "passive"))

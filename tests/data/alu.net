@@ -1,6 +1,6 @@
 (export (version "E")
   (design
-    (source "/home/olof/Projects/rv321/hardware/alu/alu.kicad_sch")
+    (source "alu.kicad_sch")
     (date "Fri Feb  2 22:04:16 2024")
     (tool "Eeschema 7.0.10-7.0.10~ubuntu20.04.1")
     (sheet (number "1") (name "/") (tstamps "/")
@@ -1030,7 +1030,7 @@
         (pin (num "16") (name "VDD") (type "power_in")))))
   (libraries
     (library (logical "riscv-serial")
-      (uri "/home/olof/Projects/rv321/hardware/alu/../riscv-serial.kicad_sym")))
+      (uri "../riscv-serial.kicad_sym")))
   (nets
     (net (code "1") (name "/(A+B)&C")
       (node (ref "U17") (pin "2") (pintype "input"))

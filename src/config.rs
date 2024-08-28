@@ -162,10 +162,16 @@ mod tests {
 
     #[test]
     fn can_parse_config() {
-        let input =
-            std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/test-data/alu.vcfg"))
+        let input1 =
+            std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/data/alu.vcfg"))
                 .unwrap();
-        let config = Config::try_from(&input).unwrap();
+        let input2 = std::fs::read_to_string(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/data/common.vcfg"
+        ))
+        .unwrap();
+        let mut config = Config::try_from(&input1).unwrap();
+        config.parse(&input2).unwrap();
         for rule in &config.part_rules {
             println!("{:?} -> {:?}", rule.pattern, rule.rule);
         }
