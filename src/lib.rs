@@ -158,8 +158,8 @@ fn collect_mod_ports(netlist: &mut NetList, config: &Config) -> Result<Vec<ModPo
             let net = make_verilog_name(pin.net.as_str()).to_string();
             let typ = match pin.typ {
                 PinType::Input => "output",
-                PinType::Output => "input",
-                _ => "inout",
+                PinType::Output => "input ",
+                _ => "inout ",
             }
             .to_string();
             mod_ports.push(ModPort { name, net, typ })
@@ -236,9 +236,9 @@ pub fn write_verilog(
     let comps = collect_comps(&netlist, &config)?;
 
     if mod_ports.is_empty() {
-        writeln!(out, "module {module_name}();")?;
+        writeln!(out, "module {module_name} ();")?;
     } else {
-        write!(out, "module {module_name}\n(\n    ")?;
+        write!(out, "module {module_name} (\n    ")?;
         let mut sep = "";
         for ModPort { name, typ, net: _ } in &mod_ports {
             write!(out, "{sep}{typ} {name}",)?;
@@ -249,28 +249,28 @@ pub fn write_verilog(
 
     writeln!(out,)?;
     for net in netlist.nets.iter() {
-        writeln!(out, "    wire {};", make_verilog_name(net.name.as_str()))?;
+        writeln!(out, "  wire {};", make_verilog_name(net.name.as_str()))?;
     }
     writeln!(out,)?;
-    writeln!(out, "    assign VCC = 1;")?;
-    writeln!(out, "    assign GND = 0;")?;
+    writeln!(out, "  assign VCC = 1;")?;
+    writeln!(out, "  assign GND = 0;")?;
     writeln!(out,)?;
     for ModPort { name, net, typ: _ } in &mod_ports {
-        writeln!(out, "    tran({name},{net});")?;
+        writeln!(out, "  tran ({name}, {net});")?;
     }
 
     writeln!(out,)?;
 
     for comp in comps {
-        write!(out, "    {}", comp.module)?;
+        write!(out, "  {}", comp.module)?;
         if !comp.module.ends_with(" ") {
             write!(out, " ")?;
         }
-        write!(out, "{}(", comp.name,)?;
+        write!(out, "{} (", comp.name,)?;
         let mut sep = "";
         for net in &comp.nets {
             write!(out, "{sep}{net}")?;
-            sep = ",";
+            sep = ", ";
         }
         writeln!(out, ");")?;
     }
