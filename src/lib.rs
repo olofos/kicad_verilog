@@ -13,6 +13,12 @@ struct ModPort {
     typ: String,
 }
 
+struct Comp<'a> {
+    name: Cow<'a, str>,
+    module: &'a str,
+    nets: Vec<Cow<'a, str>>,
+}
+
 fn make_verilog_name(name: &str) -> Cow<'_, str> {
     static RE: once_cell::sync::Lazy<Regex> =
         once_cell::sync::Lazy::new(|| Regex::new(r"^[a-zA-Z_][a-zA-Z0-9$_]*$").unwrap());
@@ -103,22 +109,16 @@ fn add_pullups_and_pulldowns(
     }
 }
 
-fn collect_mod_ports(netlist: &mut NetList, config: &Config) -> Result<Vec<ModPort>> {
+fn collect_mod_ports(netlist: &NetList, config: &Config) -> Result<Vec<ModPort>> {
     let mut mod_ports = vec![];
 
-    for (ext_comp, ext_pins) in netlist.components.iter_mut().filter_map(|comp| {
-        let rule = config.match_component(comp);
-        match rule {
-            Some(PartRule::External(pins)) => Some((comp, pins)),
-            _ => None,
-        }
-    }) {
+    for ext_comp in &netlist.components {
+        let Some(PartRule::External(ext_pins)) = config.match_component(ext_comp) else {
+            continue;
+        };
+
         for pin_num in ext_pins {
-            let Some(pin) = ext_comp
-                .pins
-                .iter_mut()
-                .find(|pin| pin.num == pin_num.into())
-            else {
+            let Some(pin) = ext_comp.find_pin(pin_num.into()) else {
                 anyhow::bail!(
                     "No pin number {} found for component {}",
                     pin_num,
@@ -126,37 +126,34 @@ fn collect_mod_ports(netlist: &mut NetList, config: &Config) -> Result<Vec<ModPo
                 )
             };
 
-            let Some(net) = netlist.nets.iter_mut().find(|net| net.name == pin.net) else {
+            let Some(net) = netlist.find_net(pin.net) else {
                 continue;
             };
-            let all_input = net
-                .nodes
-                .iter()
-                .all(|node| node.ref_des == ext_comp.ref_des || node.typ == PinType::Input);
+            let all_input = net.nodes.iter().all(|node| {
+                if node.ref_des == ext_comp.ref_des || node.typ == PinType::Input {
+                    true
+                } else {
+                    false
+                }
+            });
 
             let any_output = net
                 .nodes
                 .iter()
                 .any(|node| node.ref_des != ext_comp.ref_des && node.typ == PinType::Output);
 
-            let Some(node) = net
-                .nodes
-                .iter_mut()
-                .find(|node| node.ref_des == ext_comp.ref_des)
-            else {
-                continue;
+            let typ = if any_output {
+                PinType::Input
+            } else if all_input {
+                PinType::Output
+            } else {
+                pin.typ
             };
-            if any_output {
-                node.typ = PinType::Input;
-            }
-            if all_input {
-                node.typ = PinType::Output;
-            }
-            pin.typ = node.typ;
+
             let name = format!("{}_{}", ext_comp.ref_des, pin.name);
             let name = make_verilog_name(&name).to_string();
             let net = make_verilog_name(pin.net.as_str()).to_string();
-            let typ = match pin.typ {
+            let typ = match typ {
                 PinType::Input => "output",
                 PinType::Output => "input ",
                 _ => "inout ",
@@ -179,9 +176,7 @@ fn collect_comps<'a>(netlist: &'a NetList, config: &'a Config) -> Result<Vec<Com
                     let nets = pins
                         .iter()
                         .map(|pin_num| {
-                            if let Some(pin) =
-                                comp.pins.iter().find(|pin| pin.num.as_str() == pin_num)
-                            {
+                            if let Some(pin) = comp.find_pin(pin_num.into()) {
                                 Ok(make_verilog_name(pin.net.as_str()))
                             } else {
                                 Err(anyhow!(
@@ -211,12 +206,6 @@ fn collect_comps<'a>(netlist: &'a NetList, config: &'a Config) -> Result<Vec<Com
     Ok(comps)
 }
 
-struct Comp<'a> {
-    name: Cow<'a, str>,
-    module: &'a str,
-    nets: Vec<Cow<'a, str>>,
-}
-
 pub fn write_verilog(
     out: &mut impl std::io::Write,
     mut netlist: NetList,
@@ -232,7 +221,8 @@ pub fn write_verilog(
     remove_pinless_components(&mut netlist);
     remove_skipped_components(&mut netlist, &config);
     add_pullups_and_pulldowns(&mut config, &netlist, vcc_nets, gnd_nets);
-    let mod_ports = collect_mod_ports(&mut netlist, &config)?;
+
+    let mod_ports = collect_mod_ports(&netlist, &config)?;
     let comps = collect_comps(&netlist, &config)?;
 
     if mod_ports.is_empty() {
