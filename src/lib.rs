@@ -109,7 +109,7 @@ pub fn write_verilog(
     module_name: &str,
     mut config: Config,
 ) -> Result<()> {
-    let module_name = make_verilog_name(&module_name);
+    let module_name = make_verilog_name(module_name);
 
     let vcc_nets: &[NetName] = &[NetName::from("VCC")];
     let gnd_nets: &[NetName] = &[NetName::from("GND")];
