@@ -19,5 +19,5 @@ module simple
     tran(J1_Y,\/Y );
 
     pullup R1(\/A );
-    \74LVC1G00  U1(\/A ,\/B ,\/Y );
+    \74LVC1G00 U1(\/A ,\/B ,\/Y );
 endmodule

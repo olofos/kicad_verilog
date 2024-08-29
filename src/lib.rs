@@ -103,22 +103,7 @@ fn add_pullups_and_pulldowns(
     }
 }
 
-pub fn write_verilog(
-    out: &mut impl std::io::Write,
-    mut netlist: NetList,
-    module_name: &str,
-    mut config: Config,
-) -> Result<()> {
-    let module_name = make_verilog_name(module_name);
-
-    let vcc_nets: &[NetName] = &[NetName::from("VCC")];
-    let gnd_nets: &[NetName] = &[NetName::from("GND")];
-
-    remove_decoupling_caps(&mut netlist, vcc_nets, gnd_nets);
-    remove_pinless_components(&mut netlist);
-    remove_skipped_components(&mut netlist, &config);
-    add_pullups_and_pulldowns(&mut config, &netlist, vcc_nets, gnd_nets);
-
+fn collect_mod_ports(netlist: &mut NetList, config: &Config) -> Result<Vec<ModPort>> {
     let mut mod_ports = vec![];
 
     for (ext_comp, ext_pins) in netlist.components.iter_mut().filter_map(|comp| {
@@ -180,34 +165,17 @@ pub fn write_verilog(
             mod_ports.push(ModPort { name, net, typ })
         }
     }
+    Ok(mod_ports)
+}
 
-    let port_string = mod_ports
-        .iter()
-        .map(|ModPort { name, typ, net: _ }| format!("{typ} {name}",))
-        .collect::<Vec<_>>()
-        .join(",\n    ");
-    writeln!(out, "module {module_name}\n(\n    {port_string}\n);",)?;
-
-    writeln!(out,)?;
-    for net in netlist.nets.iter() {
-        writeln!(out, "    wire {};", make_verilog_name(net.name.as_str()))?;
-    }
-    writeln!(out,)?;
-    writeln!(out, "    assign VCC = 1;")?;
-    writeln!(out, "    assign GND = 0;")?;
-    writeln!(out,)?;
-    for ModPort { name, net, typ: _ } in &mod_ports {
-        writeln!(out, "    tran({name},{net});")?;
-    }
-
-    writeln!(out,)?;
-
+fn collect_comps<'a>(netlist: &'a NetList, config: &'a Config) -> Result<Vec<Comp<'a>>> {
+    let mut comps = vec![];
     for comp in &netlist.components {
         if let Some(rule) = config.match_component(comp) {
             match rule {
                 PartRule::Skip => unreachable!(),
                 PartRule::External(_) => continue,
-                PartRule::Module(name, pins) => {
+                PartRule::Module(module, pins) => {
                     let nets = pins
                         .iter()
                         .map(|pin_num| {
@@ -225,13 +193,11 @@ pub fn write_verilog(
                         })
                         .collect::<Result<Vec<_>>>()?;
 
-                    writeln!(
-                        out,
-                        "    {} {}({});",
-                        name,
-                        make_verilog_name(comp.ref_des.as_str()),
-                        nets.join(",")
-                    )?;
+                    comps.push(Comp {
+                        module,
+                        name: make_verilog_name(comp.ref_des.as_str()),
+                        nets,
+                    })
                 }
             }
         } else {
@@ -241,6 +207,72 @@ pub fn write_verilog(
                 comp.part_id.part
             ));
         }
+    }
+    Ok(comps)
+}
+
+struct Comp<'a> {
+    name: Cow<'a, str>,
+    module: &'a str,
+    nets: Vec<Cow<'a, str>>,
+}
+
+pub fn write_verilog(
+    out: &mut impl std::io::Write,
+    mut netlist: NetList,
+    module_name: &str,
+    mut config: Config,
+) -> Result<()> {
+    let module_name = make_verilog_name(module_name);
+
+    let vcc_nets: &[NetName] = &[NetName::from("VCC")];
+    let gnd_nets: &[NetName] = &[NetName::from("GND")];
+
+    remove_decoupling_caps(&mut netlist, vcc_nets, gnd_nets);
+    remove_pinless_components(&mut netlist);
+    remove_skipped_components(&mut netlist, &config);
+    add_pullups_and_pulldowns(&mut config, &netlist, vcc_nets, gnd_nets);
+    let mod_ports = collect_mod_ports(&mut netlist, &config)?;
+    let comps = collect_comps(&netlist, &config)?;
+
+    if mod_ports.is_empty() {
+        writeln!(out, "module {module_name}();")?;
+    } else {
+        write!(out, "module {module_name}\n(\n    ")?;
+        let mut sep = "";
+        for ModPort { name, typ, net: _ } in &mod_ports {
+            write!(out, "{sep}{typ} {name}",)?;
+            sep = ",\n    ";
+        }
+        writeln!(out, "\n);")?;
+    }
+
+    writeln!(out,)?;
+    for net in netlist.nets.iter() {
+        writeln!(out, "    wire {};", make_verilog_name(net.name.as_str()))?;
+    }
+    writeln!(out,)?;
+    writeln!(out, "    assign VCC = 1;")?;
+    writeln!(out, "    assign GND = 0;")?;
+    writeln!(out,)?;
+    for ModPort { name, net, typ: _ } in &mod_ports {
+        writeln!(out, "    tran({name},{net});")?;
+    }
+
+    writeln!(out,)?;
+
+    for comp in comps {
+        write!(out, "    {}", comp.module)?;
+        if !comp.module.ends_with(" ") {
+            write!(out, " ")?;
+        }
+        write!(out, "{}(", comp.name,)?;
+        let mut sep = "";
+        for net in &comp.nets {
+            write!(out, "{sep}{net}")?;
+            sep = ",";
+        }
+        writeln!(out, ");")?;
     }
     writeln!(out, "endmodule")?;
 
