@@ -95,6 +95,15 @@ fn parse(input: &str) -> anyhow::Result<Vec<PartPatternRule>> {
     Ok(result)
 }
 
+impl PartPattern {
+    fn match_component(&self, comp: &Component) -> bool {
+        match self {
+            PartPattern::RefDes(ref_des) => RefDes::from(ref_des) == comp.ref_des,
+            PartPattern::Part(part) => part == comp.part_id.part,
+        }
+    }
+}
+
 impl Config {
     pub fn new() -> Self {
         Self::default()
@@ -131,10 +140,7 @@ impl Config {
 
     pub fn match_component(&self, comp: &Component) -> Option<&PartRule> {
         for rule in &self.part_rules {
-            if match &rule.pattern {
-                PartPattern::RefDes(ref_des) => ref_des == comp.ref_des.as_str(),
-                PartPattern::Part(part) => part == comp.part_id.part,
-            } {
+            if rule.pattern.match_component(comp) {
                 return Some(&rule.rule);
             }
         }
