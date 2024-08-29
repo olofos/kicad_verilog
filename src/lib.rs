@@ -103,7 +103,12 @@ fn add_pullups_and_pulldowns(
     }
 }
 
-pub fn write_verilog(mut netlist: NetList, module_name: &str, mut config: Config) -> Result<()> {
+pub fn write_verilog(
+    out: &mut impl std::io::Write,
+    mut netlist: NetList,
+    module_name: &str,
+    mut config: Config,
+) -> Result<()> {
     let module_name = make_verilog_name(&module_name);
 
     let vcc_nets: &[NetName] = &[NetName::from("VCC")];
@@ -181,21 +186,21 @@ pub fn write_verilog(mut netlist: NetList, module_name: &str, mut config: Config
         .map(|ModPort { name, typ, net: _ }| format!("{typ} {name}",))
         .collect::<Vec<_>>()
         .join(",\n    ");
-    println!("module {module_name}\n(\n    {port_string}\n);",);
+    writeln!(out, "module {module_name}\n(\n    {port_string}\n);",)?;
 
-    println!();
+    writeln!(out,)?;
     for net in netlist.nets.iter() {
-        println!("    wire {};", make_verilog_name(net.name.as_str()));
+        writeln!(out, "    wire {};", make_verilog_name(net.name.as_str()))?;
     }
-    println!();
-    println!("    assign VCC = 1;");
-    println!("    assign GND = 0;");
-    println!();
+    writeln!(out,)?;
+    writeln!(out, "    assign VCC = 1;")?;
+    writeln!(out, "    assign GND = 0;")?;
+    writeln!(out,)?;
     for ModPort { name, net, typ: _ } in &mod_ports {
-        println!("    tran({name},{net});");
+        writeln!(out, "    tran({name},{net});")?;
     }
 
-    println!();
+    writeln!(out,)?;
 
     for comp in &netlist.components {
         if let Some(rule) = config.match_component(comp) {
@@ -220,12 +225,13 @@ pub fn write_verilog(mut netlist: NetList, module_name: &str, mut config: Config
                         })
                         .collect::<Result<Vec<_>>>()?;
 
-                    println!(
+                    writeln!(
+                        out,
                         "    {} {}({});",
                         name,
                         make_verilog_name(comp.ref_des.as_str()),
                         nets.join(",")
-                    );
+                    )?;
                 }
             }
         } else {
@@ -236,7 +242,7 @@ pub fn write_verilog(mut netlist: NetList, module_name: &str, mut config: Config
             ));
         }
     }
-    println!("endmodule");
+    writeln!(out, "endmodule")?;
 
     Ok(())
 }

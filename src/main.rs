@@ -17,6 +17,9 @@ struct Cli {
     /// Module name
     #[arg(long, short)]
     module: Option<String>,
+    /// Verilog output file
+    #[arg(long, short)]
+    output: Option<PathBuf>,
 }
 
 fn main() -> Result<()> {
@@ -42,7 +45,12 @@ fn main() -> Result<()> {
         config.parse(&input)?;
     }
 
-    kicad_verilog::write_verilog(netlist, &module_name, config)?;
+    if let Some(path) = cli.output {
+        let mut out = std::fs::File::create(&path)?;
+        kicad_verilog::write_verilog(&mut out, netlist, &module_name, config)?;
+    } else {
+        kicad_verilog::write_verilog(&mut std::io::stdout(), netlist, &module_name, config)?;
+    }
 
     Ok(())
 }

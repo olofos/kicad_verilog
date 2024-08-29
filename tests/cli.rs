@@ -35,17 +35,15 @@ fn can_compile_and_run_with_iverilog() {
 
     let mut cmd = Command::cargo_bin(env!("CARGO_PKG_NAME")).unwrap();
 
-    let assert = cmd
-        .args([
-            concat!(env!("CARGO_MANIFEST_DIR"), "/tests/data/simple.net"),
-            "-c",
-            concat!(env!("CARGO_MANIFEST_DIR"), "/tests/data/simple.vcfg"),
-        ])
-        .assert()
-        .success();
-    let output = assert.get_output();
-
-    std::fs::write(&v_path, &output.stdout).unwrap();
+    cmd.args([
+        concat!(env!("CARGO_MANIFEST_DIR"), "/tests/data/simple.net"),
+        "-c",
+        concat!(env!("CARGO_MANIFEST_DIR"), "/tests/data/simple.vcfg"),
+        "-o",
+    ])
+    .arg(&v_path)
+    .assert()
+    .success();
 
     let mut cmd = Command::new("iverilog");
     cmd.arg("-g2012");
