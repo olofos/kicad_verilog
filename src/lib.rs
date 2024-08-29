@@ -129,13 +129,27 @@ fn collect_mod_ports(netlist: &NetList, config: &Config) -> Result<Vec<ModPort>>
             let Some(net) = netlist.find_net(pin.net) else {
                 continue;
             };
-            let all_input = net.nodes.iter().all(|node| {
-                if node.ref_des == ext_comp.ref_des || node.typ == PinType::Input {
-                    true
-                } else {
-                    false
-                }
-            });
+
+            let any_input = net
+                .nodes
+                .iter()
+                .any(|node| node.ref_des != ext_comp.ref_des && node.typ == PinType::Input);
+
+            let all_input = any_input
+                && net.nodes.iter().all(|node| {
+                    if node.ref_des == ext_comp.ref_des || node.typ == PinType::Input {
+                        true
+                    } else if node.typ == PinType::Passive {
+                        let comp = netlist.find_component(node.ref_des).unwrap();
+                        if let Some(PartRule::Module(name, _)) = config.match_component(comp) {
+                            name == "pullup" || name == "pulldown"
+                        } else {
+                            false
+                        }
+                    } else {
+                        false
+                    }
+                });
 
             let any_output = net
                 .nodes

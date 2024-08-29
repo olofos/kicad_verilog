@@ -1,5 +1,5 @@
 module simple (
-    inout  J1_A,
+    input  J1_A,
     input  J1_B,
     output J1_Y
 );
