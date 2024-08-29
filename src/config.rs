@@ -22,7 +22,7 @@ struct PartPatternRule {
     rule: PartRule,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Default, Debug, Clone)]
 pub struct Config {
     part_rules: Vec<PartPatternRule>,
 }
@@ -97,7 +97,7 @@ fn parse(input: &str) -> anyhow::Result<Vec<PartPatternRule>> {
 
 impl Config {
     pub fn new() -> Self {
-        Self { part_rules: vec![] }
+        Self::default()
     }
 
     pub fn parse(&mut self, i: &str) -> Result<()> {
